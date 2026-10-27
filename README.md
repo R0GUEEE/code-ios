@@ -32,6 +32,15 @@ WKWebView ── http://127.0.0.1:<port> ── HTTPServer (Network.framework)
   cannot run in the web extension host.
 - Unsigned IPA: re-sign (zsign/SideStore/AltStore) or install via TrollStore/jailbreak.
 
+## Install
+
+Download `CodeIOS-0.1.0-unsigned.ipa` from
+[Releases](https://github.com/R0GUEEE/code-ios/releases/tag/v0.1.0) and re-sign it
+(zsign / SideStore / AltStore), or install it via TrollStore or a jailbroken device.
+It is **unsigned** — iOS will refuse it as-is.
+
+sha256 `13dab2463962d478e62320fa7ac4feca548812229c7696148d06669a6cec8dde`
+
 ## Build
 
 CI only — there is no Xcode on the phone.
