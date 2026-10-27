@@ -70,6 +70,31 @@ difference is "refuse to remove a non-empty folder" vs "wipe it". Now honoured e
 ### 9. LOW — missing `X-Content-Type-Options: nosniff`; `&` unescaped in the config attribute
 Both hardening details rather than live bugs. Fixed.
 
+## v0.1.2 — crash instrumentation
+
+The v0.1.1 build crashed on device at startup and could not be reproduced off-device.
+v0.1.2 does not guess at a fix; it makes the app testify:
+
+- `Documents/launch.log` — timestamped breadcrumb per boot stage (app init → host init →
+  listen port → webview create → load → didFinish).
+- A launch marker armed in `App.init` and removed only when the page finishes loading. If the
+  marker survives to the next launch, the app opens **diagnostics instead of a blank screen**
+  and shows the trail, with Copy / Retry / Continue-anyway.
+- `NSSetUncaughtExceptionHandler` + fatal-signal handlers append a final line and write a
+  report to `Documents/crashes/`.
+- `Documents` is visible in the Files app (`UIFileSharingEnabled`), so the log can be read
+  without a Mac.
+
+Two latent defects fixed on the way:
+
+- `sockaddr_in.sin_len` was left 0 before `bind()`; Darwin expects it set, and on failure every
+  candidate port would look busy and startup would abort with "no free port".
+- `NWListener` was driven from a *concurrent* queue, so connection callbacks could interleave
+  unsynchronised; it is serial now.
+
+Also added `LSRequiresIPhoneOS` and a `UIApplicationSceneManifest`, both of which Xcode puts in
+every iOS app and neither of which the earlier build had.
+
 ## Open — known, deliberate, not fixed here
 
 | # | Issue | Why it matters |

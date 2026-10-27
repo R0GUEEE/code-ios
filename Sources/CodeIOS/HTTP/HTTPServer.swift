@@ -11,7 +11,7 @@ final class HTTPServer {
 
     /// Set by the owner once the server exists; captured per connection.
     var handler: Handler?
-    private let queue = DispatchQueue(label: "com.codeios.http", qos: .userInitiated, attributes: .concurrent)
+    private let queue = DispatchQueue(label: "com.codeios.http", qos: .userInitiated)
     private var listener: NWListener?
     private var connections: [HTTPConnection] = []
     private let lock = NSLock()
@@ -64,6 +64,7 @@ final class HTTPServer {
         if fd < 0 { return false }
         defer { close(fd) }
         var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = port.bigEndian
         address.sin_addr.s_addr = inet_addr("127.0.0.1")

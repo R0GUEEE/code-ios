@@ -22,9 +22,12 @@ targets:
       path: Support/Info.plist
       properties:
         CFBundleDisplayName: VS Code
-        CFBundleShortVersionString: "0.1.1"
+        CFBundleShortVersionString: "0.1.2"
         CFBundleVersion: "1"
+        LSRequiresIPhoneOS: true
         UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
@@ -44,7 +47,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codeios.vscode
         SWIFT_VERSION: "5.0"
-        MARKETING_VERSION: "0.1.1"
+        MARKETING_VERSION: "0.1.2"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_USER_SCRIPT_SANDBOXING: NO

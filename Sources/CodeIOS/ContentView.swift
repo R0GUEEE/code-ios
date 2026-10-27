@@ -11,29 +11,38 @@ final class HostModel: ObservableObject {
     private var host: WebHost?
 
     var workspacePath: String {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
         return documents.appendingPathComponent("Workspace", isDirectory: true).path
     }
 
     func startIfNeeded() {
         guard host == nil, url == nil else { return }
+        Diagnostics.append("host: init begin")
         do {
             let workspace = URL(fileURLWithPath: workspacePath, isDirectory: true)
             try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
             seedSampleIfEmpty(workspace)
+            Diagnostics.append("host: workspace ready at \(workspace.path)")
 
             let host = try WebHost(workspaceURL: workspace)
+            Diagnostics.append("host: constructed")
             let base = try host.start()
+            Diagnostics.append("host: listening on \(base.absoluteString)")
+
             self.host = host
             self.url = base
             self.detail = base.absoluteString
         } catch {
-            self.failure = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+            let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+            Diagnostics.append("host: FAILED — \(message)")
+            self.failure = message
             self.detail = "host failed to start"
         }
     }
 
     func restart() {
+        Diagnostics.append("host: restart requested")
         host?.stop()
         host = nil
         url = nil
@@ -42,7 +51,6 @@ final class HostModel: ObservableObject {
         startIfNeeded()
     }
 
-    /// A couple of sample files so the first launch isn't an empty box.
     private func seedSampleIfEmpty(_ workspace: URL) {
         let contents = (try? FileManager.default.contentsOfDirectory(atPath: workspace.path)) ?? []
         guard contents.isEmpty else { return }
@@ -75,27 +83,34 @@ struct ContentView: View {
     @StateObject private var model = HostModel()
     @State private var reloadToken = 0
     @State private var showMenu = false
+    @State private var showDiagnostics = false
+    @State private var diagnosticsText = ""
+    @State private var bootChecked = false
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
 
-            if let url = model.url {
-                WorkbenchWebView(url: url, reloadToken: reloadToken)
-                    .ignoresSafeArea(edges: [.bottom, .horizontal])
+            if showDiagnostics {
+                DiagnosticsView(text: diagnosticsText,
+                                onRetry: {
+                                    Diagnostics.clearDiagnostics()
+                                    showDiagnostics = false
+                                    model.restart()
+                                },
+                                onDismiss: {
+                                    showDiagnostics = false
+                                    model.startIfNeeded()
+                                })
+            } else if let url = model.url {
+                WorkbenchWebView(url: url, reloadToken: reloadToken, onLoaded: {
+                    Diagnostics.markBootCompleted("webview did finish")
+                })
+                .ignoresSafeArea(edges: [.bottom, .horizontal])
             } else if let failure = model.failure {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 40))
-                    Text("Could not start the workbench").font(.headline)
-                    Text(failure)
-                        .font(.footnote.monospaced())
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                    Button("Try again") { model.restart() }
-                        .buttonStyle(.borderedProminent)
-                }
-                .foregroundStyle(.white)
+                DiagnosticsView(text: "\(failure)\n\n\(Diagnostics.log())",
+                                onRetry: { model.restart() },
+                                onDismiss: nil)
             } else {
                 VStack(spacing: 12) {
                     ProgressView()
@@ -104,7 +119,7 @@ struct ContentView: View {
                 .foregroundStyle(.white)
             }
 
-            if model.url != nil {
+            if model.url != nil && !showDiagnostics {
                 HStack(spacing: 10) {
                     Spacer()
                     Button {
@@ -120,15 +135,13 @@ struct ContentView: View {
                 }
                 .padding(.trailing, 6)
                 .padding(.top, 2)
-                .background(.ultraThinMaterial.opacity(0.001))
                 .confirmationDialog("Workspace", isPresented: $showMenu, titleVisibility: .visible) {
                     Button("Copy workspace path") {
                         UIPasteboard.general.string = model.workspacePath
                     }
-                    Button("Open Files app") {
-                        if let url = URL(string: "shareddocuments://") {
-                            UIApplication.shared.open(url)
-                        }
+                    Button("Show diagnostics") {
+                        diagnosticsText = Diagnostics.log()
+                        showDiagnostics = true
                     }
                     Button("Restart workbench", role: .destructive) { model.restart() }
                     Button("Cancel", role: .cancel) {}
@@ -137,15 +150,70 @@ struct ContentView: View {
                 }
             }
         }
-        .task { model.startIfNeeded() }
+        .task {
+            guard !bootChecked else { return }
+            bootChecked = true
+
+            Diagnostics.beginLaunch()
+            if Diagnostics.previousLaunchCrashed {
+                // The last run died between arming the marker and the page loading.
+                Diagnostics.append("boot: previous launch crashed — entering diagnostics")
+                diagnosticsText = Diagnostics.log()
+                showDiagnostics = true
+                return
+            }
+            model.startIfNeeded()
+        }
+    }
+}
+
+struct DiagnosticsView: View {
+    let text: String
+    let onRetry: () -> Void
+    let onDismiss: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                Text("Startup diagnostics").font(.headline)
+            }
+            ScrollView {
+                Text(text.isEmpty ? "(empty)" : text)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 320)
+            .padding(8)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+
+            HStack(spacing: 10) {
+                Button("Copy") { UIPasteboard.general.string = text }
+                    .buttonStyle(.bordered)
+                Button("Retry") { onRetry() }
+                    .buttonStyle(.borderedProminent)
+                if let onDismiss = onDismiss {
+                    Button("Continue anyway") { onDismiss() }
+                        .buttonStyle(.bordered)
+                }
+            }
+            Text("Documents/launch.log holds the full trail.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .foregroundStyle(.white)
     }
 }
 
 struct WorkbenchWebView: UIViewRepresentable {
     let url: URL
     let reloadToken: Int
+    let onLoaded: () -> Void
 
     func makeUIView(context: Context) -> WKWebView {
+        Diagnostics.append("webview: create")
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.allowsInlineMediaPlayback = true
@@ -159,9 +227,9 @@ struct WorkbenchWebView: UIViewRepresentable {
         webView.scrollView.backgroundColor = .black
         webView.allowsBackForwardNavigationGestures = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
-        webView.customUserAgent = nil
 
         context.coordinator.lastToken = reloadToken
+        Diagnostics.append("webview: load \(url.absoluteString)")
         webView.load(URLRequest(url: url))
         return webView
     }
@@ -169,27 +237,43 @@ struct WorkbenchWebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         if context.coordinator.lastToken != reloadToken {
             context.coordinator.lastToken = reloadToken
+            Diagnostics.append("webview: reload")
             webView.reload()
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(onLoaded: onLoaded)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         var lastToken = -1
+        private let onLoaded: () -> Void
+
+        init(onLoaded: @escaping () -> Void) {
+            self.onLoaded = onLoaded
+        }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            NSLog("codeios: page loaded")
+            Diagnostics.append("webview: didFinish")
+            onLoaded()
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            NSLog("codeios: navigation failed \(error)")
+            Diagnostics.append("webview: didFail — \(error.localizedDescription)")
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            NSLog("codeios: provisional navigation failed \(error)")
+            Diagnostics.append("webview: didFailProvisional — \(error.localizedDescription)")
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            Diagnostics.append("webview: content process terminated (jetsam?)")
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            decisionHandler(.allow)
         }
     }
 }
