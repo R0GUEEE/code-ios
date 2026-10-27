@@ -22,6 +22,8 @@ WKWebView ── http://127.0.0.1:<port> ── HTTPServer (Network.framework)
   open, save, rename, delete all hit real files.
 - Files app access (`UIFileSharingEnabled`), so projects can be dropped in from Finder/iCloud.
 
+See [BUGS.md](BUGS.md) for the audit trail: what was broken, what was fixed in 0.1.1, and what is still open.
+
 ## What does not work yet
 
 - **Installing from the marketplace UI hangs** — the browser extension-management pipeline

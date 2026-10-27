@@ -35,6 +35,18 @@ struct HTTPResponse {
                      body: Data(string.utf8))
     }
 
+    static func html(_ string: String, status: Int = 200) -> HTTPResponse {
+        HTTPResponse(status: status,
+                     contentType: "text/html; charset=utf-8",
+                     body: Data(string.utf8))
+    }
+
+    static func empty(status: Int) -> HTTPResponse {
+        var response = HTTPResponse(status: status, contentType: "text/plain", body: Data())
+        response.omitBody = true
+        return response
+    }
+
     static func json(_ value: Any, status: Int = 200) -> HTTPResponse {
         let data = (try? JSONSerialization.data(withJSONObject: value, options: [])) ?? Data("{}".utf8)
         return HTTPResponse(status: status, contentType: "application/json", body: data)
@@ -62,7 +74,10 @@ struct HTTPResponse {
         case 400: return "Bad Request"
         case 403: return "Forbidden"
         case 404: return "Not Found"
+        case 304: return "Not Modified"
         case 405: return "Method Not Allowed"
+        case 411: return "Length Required"
+        case 413: return "Payload Too Large"
         case 500: return "Internal Server Error"
         default: return "Status"
         }

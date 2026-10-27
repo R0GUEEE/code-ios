@@ -112,6 +112,7 @@ final class HTTPConnection {
     private var buffer = Data()
     private var headerEnd: Int?
     private var done = false
+    private var timeout: DispatchWorkItem?
 
     init(connection: NWConnection,
          queue: DispatchQueue,
@@ -124,6 +125,15 @@ final class HTTPConnection {
     }
 
     func start() {
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, !self.done else { return }
+            NSLog("codeios.http: dropping idle connection")
+            self.connection.cancel()
+            self.finish()
+        }
+        timeout = work
+        queue.asyncAfter(deadline: .now() + 30, execute: work)
+
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
@@ -145,6 +155,8 @@ final class HTTPConnection {
     private func finish() {
         guard !done else { return }
         done = true
+        timeout?.cancel()
+        timeout = nil
         onFinish(self)
     }
 
@@ -206,6 +218,13 @@ final class HTTPConnection {
             headers[name] = value
         }
 
+        // We only understand Content-Length bodies. Silently treating a chunked
+        // upload as empty would truncate a user's file to zero bytes.
+        if let encoding = headers["transfer-encoding"],
+           encoding.lowercased().contains("chunked") {
+            respond(HTTPResponse.text("chunked bodies are not supported", status: 411))
+            return true
+        }
         let contentLength = Int(headers["content-length"] ?? "0") ?? 0
         let total = end + contentLength
         if buffer.count < total { return false }
@@ -241,6 +260,7 @@ final class HTTPConnection {
         head += "Content-Length: \(response.body.count)\r\n"
         head += "Connection: close\r\n"
         head += "Cache-Control: \(response.cacheControl)\r\n"
+        head += "X-Content-Type-Options: nosniff\r\n"
         for (name, value) in response.extraHeaders {
             head += "\(name): \(value)\r\n"
         }

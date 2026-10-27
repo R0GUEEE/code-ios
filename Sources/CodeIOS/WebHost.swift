@@ -99,16 +99,16 @@ final class WebHost {
         }
         if path.hasPrefix("/resources/server/") {
             let relative = String(path.dropFirst("/resources/server/".count))
-            return staticFile(root: webRoot, relative: relative)
+            return staticFile(root: webRoot, relative: relative, request: request)
         }
         if path.hasPrefix("/ext/") {
             let relative = String(path.dropFirst("/ext/".count))
-            return staticFile(root: extRoot, relative: relative)
+            return staticFile(root: extRoot, relative: relative, request: request)
         }
-        return staticFile(root: webRoot, relative: String(path.dropFirst()))
+        return staticFile(root: webRoot, relative: String(path.dropFirst()), request: request)
     }
 
-    private func staticFile(root: URL, relative: String) -> HTTPResponse {
+    private func staticFile(root: URL, relative: String, request: HTTPRequest) -> HTTPResponse {
         guard !relative.isEmpty else { return .text("not found", status: 404) }
         let candidate = root.appendingPathComponent(relative).standardizedFileURL
         let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path
@@ -119,7 +119,22 @@ final class WebHost {
         guard let data = try? Data(contentsOf: candidate, options: [.mappedIfSafe]) else {
             return .text("not found", status: 404)
         }
-        return .asset(data, contentType: MIME.type(forPath: relative))
+        // Weak validator from size+mtime: revalidate bundled assets so an app
+        // update can never serve yesterday's workbench out of the HTTP cache.
+        let attributes = try? FileManager.default.attributesOfItem(atPath: candidate.path)
+        let size = (attributes?[.size] as? NSNumber)?.intValue ?? data.count
+        let mtime = Int((attributes?[.modificationDate] as? Date ?? Date(timeIntervalSince1970: 0)).timeIntervalSince1970)
+        let etag = "\"\(size)-\(mtime)\""
+
+        if request.headers["if-none-match"] == etag {
+            var notModified = HTTPResponse.empty(status: 304)
+            notModified.extraHeaders = [("ETag", etag)]
+            return notModified
+        }
+        var response = HTTPResponse.asset(data, contentType: MIME.type(forPath: relative))
+        response.cacheControl = "no-cache"
+        response.extraHeaders = [("ETag", etag)]
+        return response
     }
 
     // MARK: - workbench configuration
@@ -177,7 +192,9 @@ final class WebHost {
         guard var html = try? String(contentsOf: file, encoding: .utf8) else {
             return .text("workbench template unreadable", status: 500)
         }
-        let configJSON = jsonString(productConfiguration()).replacingOccurrences(of: "\"", with: "&quot;")
+        let configJSON = jsonString(productConfiguration())
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
 
         let replacements: [String: String] = [
             "{{WORKBENCH_WEB_BASE_URL}}": "",
@@ -191,7 +208,7 @@ final class WebHost {
         for (key, value) in replacements {
             html = html.replacingOccurrences(of: key, with: value)
         }
-        return .text(html)
+        return .html(html)
     }
 
     private func jsonString(_ object: Any) -> String {

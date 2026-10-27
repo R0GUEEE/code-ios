@@ -31,7 +31,8 @@ final class FSBridge {
             case "mkdir":
                 return try mkdir(path: try required(request, "path"))
             case "delete":
-                return try delete(path: try required(request, "path"))
+                return try delete(path: try required(request, "path"),
+                                  recursive: request.query["recursive"] == "1")
             case "rename":
                 return try rename(from: try required(request, "from"), to: try required(request, "to"))
             default:
@@ -48,7 +49,7 @@ final class FSBridge {
 
     private func stat(path: String) throws -> HTTPResponse {
         let url = try resolve(path)
-        let values = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey])
+        let values = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey, .isSymbolicLinkKey])
         let isDirectory = values.isDirectory ?? false
         let mtime = (values.contentModificationDate ?? Date(timeIntervalSince1970: 0)).timeIntervalSince1970 * 1000
         return .json([
@@ -103,8 +104,15 @@ final class FSBridge {
         return .json(["ok": true])
     }
 
-    private func delete(path: String) throws -> HTTPResponse {
+    private func delete(path: String, recursive: Bool) throws -> HTTPResponse {
         let url = try resolve(path)
+        let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+        if (values.isDirectory ?? false) && !recursive {
+            let children = try FileManager.default.contentsOfDirectory(atPath: url.path)
+            if !children.isEmpty {
+                throw BridgeError(status: 400, message: "directory not empty: \(url.path)")
+            }
+        }
         try FileManager.default.removeItem(at: url)
         return .json(["ok": true])
     }
@@ -137,7 +145,9 @@ final class FSBridge {
             throw BridgeError(status: 400, message: "path must be absolute")
         }
         let url = URL(fileURLWithPath: path).standardizedFileURL
-        let canonical = url.path
+        // Resolve symlinks *before* the containment check: otherwise a symlink
+        // planted inside the workspace would launder access to anywhere on disk.
+        let canonical = url.resolvingSymlinksInPath().path
 
         let inside = roots.contains { root in
             canonical == root || canonical.hasPrefix(root + "/")

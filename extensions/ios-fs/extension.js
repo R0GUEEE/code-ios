@@ -20,10 +20,20 @@ function log(msg) {
 	} catch (e) { /* logging must never break the bridge */ }
 }
 
+// FileSystemProviderCapabilities is not part of the public vscode.d.ts surface, so
+// these are the numeric values from the protocol: 2 = FileReadWrite (readFile /
+// writeFile), 1024 = PathCaseSensitive. Without capabilities the file service sees
+// 0 and treats the workspace as read-only, which breaks saving from the editor.
+const CAPABILITIES = 2 | 1024;
+
 class IosFsProvider {
 	constructor() {
 		this._emitter = new vscode.EventEmitter();
 		this.onDidChangeFile = this._emitter.event;
+	}
+
+	get capabilities() {
+		return CAPABILITIES;
 	}
 
 	// ---- helpers -------------------------------------------------------
@@ -47,6 +57,17 @@ class IosFsProvider {
 					msg = j.error;
 				}
 			} catch (e) { /* non-json body */ }
+			// VS Code branches on these codes (e.g. "file does not exist yet" when
+			// saving a new file). Reporting everything as FileIO breaks those paths.
+			if (res.status === 404) {
+				throw vscode.FileSystemError.FileNotFound(msg);
+			}
+			if (res.status === 403) {
+				throw vscode.FileSystemError.NoPermissions(msg);
+			}
+			if (res.status === 400 && /not empty/i.test(msg)) {
+				throw vscode.FileSystemError.FileIsADirectory(msg);
+			}
 			throw vscode.FileSystemError.FileIO(msg);
 		}
 		return res;
@@ -91,8 +112,9 @@ class IosFsProvider {
 		await this._call('mkdir', { path: uri.path }, { method: 'POST' });
 	}
 
-	async delete(uri) {
-		await this._call('delete', { path: uri.path }, { method: 'POST' });
+	async delete(uri, options) {
+		const recursive = options && options.recursive ? 1 : 0;
+		await this._call('delete', { path: uri.path, recursive: recursive }, { method: 'POST' });
 	}
 
 	async rename(from, to) {
@@ -159,6 +181,17 @@ async function _activate(context) {
 			const back = await vscode.workspace.fs.readFile(uri);
 			const text = new TextDecoder().decode(back);
 			log({ ev: 'SELFTEST', ok: text === payload, bytes: back.length, text: text.trim() });
+
+			// error-code contract: a missing file must surface as FileNotFound,
+			// not FileIO, or VS Code cannot tell "new file" from "broken bridge"
+			const missing = vscode.Uri.from({ scheme: 'iosfs', authority: 'local',
+				path: info.folder + '/.definitely-not-here' });
+			try {
+				await vscode.workspace.fs.stat(missing);
+				log({ ev: 'ERRCHECK', ok: false, why: 'stat of missing path did not throw' });
+			} catch (e) {
+				log({ ev: 'ERRCHECK', ok: e.code === 'FileNotFound', code: e.code, caps: provider.capabilities });
+			}
 		}
 	} catch (e) {
 		log({ ev: 'SELFTEST-FAILED', err: String(e && e.message || e) });

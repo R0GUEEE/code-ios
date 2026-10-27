@@ -279,6 +279,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json({"ok": True})
         except PermissionError as e:
             return self._json({"error": str(e)}, 403)
+        except FileNotFoundError as e:
+            return self._json({"error": "%s: %s" % (type(e).__name__, e)}, 404)
         except (OSError, KeyError) as e:
             return self._json({"error": "%s: %s" % (type(e).__name__, e)}, 400)
         return self._json({"error": "unknown op"}, 404)
