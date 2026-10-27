@@ -102,7 +102,7 @@ enum Diagnostics {
         }
 
         for sig in [SIGABRT, SIGILL, SIGSEGV, SIGFPE, SIGBUS, SIGPIPE, SIGTRAP] {
-            signal(sig) { _ in
+            signal(sig) { received in
                 // Signal context: no allocation, no locks — only write(2).
                 Diagnostics.appendRaw("CRASH (signal)\n")
                 _exit(128 + received)
