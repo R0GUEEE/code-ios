@@ -39,7 +39,7 @@ Download `CodeIOS-0.1.0-unsigned.ipa` from
 (zsign / SideStore / AltStore), or install it via TrollStore or a jailbroken device.
 It is **unsigned** — iOS will refuse it as-is.
 
-sha256 `13dab2463962d478e62320fa7ac4feca548812229c7696148d06669a6cec8dde`
+sha256 `cca2da8bba6f84bf056c2979e5a28767af7781a18fc20e3cc91c7149df0f96d6`
 
 ## Build
 
