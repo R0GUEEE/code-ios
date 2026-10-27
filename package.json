@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "vscode-web": "^1.91.1"
+  }
+}

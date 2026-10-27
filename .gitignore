@@ -1,0 +1,12 @@
+node_modules/
+Sources/CodeIOS/Resources/Web/
+Sources/CodeIOS/Resources/Extensions/
+build/
+Payload/
+*.ipa
+*.xcarchive
+CodeIOS.xcodeproj/
+*.log
+.bridge-selftest.txt
+extensions/esbenp.prettier-vscode-*/
+extensions/installed.json

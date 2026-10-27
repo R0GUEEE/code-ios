@@ -1,0 +1,24 @@
+{
+  "name": "ios-fs",
+  "publisher": "code-ios",
+  "displayName": "iOS Filesystem Bridge",
+  "description": "Maps the workbench to the device filesystem through the native host",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.70.0" },
+  "browser": "./extension.js",
+  "activationEvents": ["*"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "iosfs.openWorkspace",
+        "title": "iOS: Open Workspace",
+        "category": "iOS"
+      },
+      {
+        "command": "iosfs.ping",
+        "title": "iOS: Ping Bridge",
+        "category": "iOS"
+      }
+    ]
+  }
+}

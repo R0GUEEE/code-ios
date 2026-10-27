@@ -1,0 +1,189 @@
+import Foundation
+
+/// Owns the loopback server, the bundled workbench, the extension store and the
+/// filesystem bridge. One object == one running VS Code instance.
+final class WebHost {
+    private let server: HTTPServer
+    private let bridge: FSBridge
+    private let webRoot: URL
+    private let extRoot: URL
+    private let workspaceURL: URL
+    private(set) var port: UInt16 = 0
+
+    static let workbenchPath = "out/vs/code/browser/workbench/workbench.html"
+
+    init(workspaceURL: URL) throws {
+        self.workspaceURL = workspaceURL
+
+        guard let resources = Bundle.main.resourceURL else {
+            throw HostError("app bundle has no resource directory")
+        }
+        let web = resources.appendingPathComponent("Web", isDirectory: true)
+        let ext = resources.appendingPathComponent("Extensions", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: web.appendingPathComponent(Self.workbenchPath).path) else {
+            throw HostError("workbench assets missing from the bundle (expected \(Self.workbenchPath))")
+        }
+        self.webRoot = web
+        self.extRoot = ext
+        self.bridge = FSBridge(root: workspaceURL)
+
+        // A named local for the closure; assigned after construction.
+        var handler: HTTPServer.Handler!
+        self.server = HTTPServer { request in handler(request) }
+        handler = { [weak self] request in
+            guard let self = self else { return .text("host gone", status: 500) }
+            return self.route(request)
+        }
+    }
+
+    func start() throws -> URL {
+        port = try server.start()
+        guard let url = URL(string: "http://127.0.0.1:\(port)/") else {
+            throw HostError("bad base url")
+        }
+        NSLog("codeios: workbench at \(url.absoluteString) workspace=\(workspaceURL.path)")
+        return url
+    }
+
+    func stop() {
+        server.stop()
+    }
+
+    // MARK: - routing
+
+    private func route(_ request: HTTPRequest) -> HTTPResponse {
+        let path = request.path
+
+        if path == "/_api/workspace" {
+            return .json(["folder": bridge.workspacePath, "autoOpen": true, "port": Int(port)])
+        }
+        if path == "/_api/log" {
+            if let text = String(data: request.body, encoding: .utf8) {
+                NSLog("codeios.iosfs: \(text)")
+            }
+            return .json(["ok": true])
+        }
+        if path.hasPrefix("/_api/fs/") {
+            let op = String(path.dropFirst("/_api/fs/".count))
+            return bridge.handle(op: op, request: request)
+        }
+        if path == "/product.json" {
+            return .json(productConfiguration())
+        }
+        if path == "/" || path == "/index.html" || path == "/workbench" {
+            return workbench()
+        }
+        if path == "/healthz" {
+            return .text("ok")
+        }
+        if path.hasPrefix("/resources/server/") {
+            let relative = String(path.dropFirst("/resources/server/".count))
+            return staticFile(root: webRoot, relative: relative)
+        }
+        if path.hasPrefix("/ext/") {
+            let relative = String(path.dropFirst("/ext/".count))
+            return staticFile(root: extRoot, relative: relative)
+        }
+        return staticFile(root: webRoot, relative: String(path.dropFirst()))
+    }
+
+    private func staticFile(root: URL, relative: String) -> HTTPResponse {
+        guard !relative.isEmpty else { return .text("not found", status: 404) }
+        let candidate = root.appendingPathComponent(relative).standardizedFileURL
+        let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path
+        let target = candidate.resolvingSymlinksInPath().path
+        guard target == rootPath || target.hasPrefix(rootPath + "/") else {
+            return .text("forbidden", status: 403)
+        }
+        guard let data = try? Data(contentsOf: candidate, options: [.mappedIfSafe]) else {
+            return .text("not found", status: 404)
+        }
+        return .file(data, contentType: MIME.type(forPath: relative))
+    }
+
+    // MARK: - workbench configuration
+
+    private func productConfiguration() -> [String: Any] {
+        var product: [String: Any] = [
+            "nameShort": "VS Code",
+            "nameLong": "VS Code for iOS",
+            "applicationName": "code-ios",
+            "dataFolderName": ".vscode-ios",
+            "version": "1.91.1",
+            "commit": "e170252f762678d22cb17edbaa5b7c6e77a1e0a6",
+            "date": "2024-07-02T00:00:00.000Z",
+            "quality": "stable",
+            "serverLicense": "",
+            "serverLicenseUrl": "",
+            "linkProtectionTrustedDomains": ["https://open-vsx.org"],
+            "extensionsGallery": [
+                "serviceUrl": "https://open-vsx.org/vscode/gallery",
+                "itemUrl": "https://open-vsx.org/vscode/item",
+                "resourceUrlTemplate": "https://open-vsx.org/vscode/asset/{publisher}/{name}/{version}/{path}",
+                "controlUrl": "",
+                "recommendationsUrl": ""
+            ]
+        ]
+        product["productConfiguration"] = product
+
+        var config = product
+        config["productConfiguration"] = product
+        config["folderUri"] = [
+            "scheme": "iosfs",
+            "authority": "local",
+            "path": bridge.workspacePath
+        ]
+        config["workspaceUri"] = NSNull()
+        config["configurationDefaults"] = [
+            "workbench.colorTheme": "Default Dark Modern",
+            "editor.fontSize": 13,
+            "editor.minimap.enabled": false,
+            "workbench.startupEditor": "none",
+            "workbench.tips.enabled": false
+        ]
+        config["additionalBuiltinExtensions"] = [
+            [
+                "scheme": "http",
+                "authority": "127.0.0.1:\(port)",
+                "path": "/ext/ios-fs"
+            ]
+        ]
+        return config
+    }
+
+    private func workbench() -> HTTPResponse {
+        let file = webRoot.appendingPathComponent(Self.workbenchPath)
+        guard var html = try? String(contentsOf: file, encoding: .utf8) else {
+            return .text("workbench template unreadable", status: 500)
+        }
+        let configJSON = jsonString(productConfiguration()).replacingOccurrences(of: "\"", with: "&quot;")
+
+        let replacements: [String: String] = [
+            "{{WORKBENCH_WEB_BASE_URL}}": "",
+            "{{WORKBENCH_WEB_CONFIGURATION}}": configJSON,
+            "{{WORKBENCH_AUTH_SESSION}}": "{}",
+            "{{WORKBENCH_BUILTIN_EXTENSIONS}}": "[]",
+            "{{WORKBENCH_NLS_BASE_URL}}": "",
+            "{{NLS_BASE_URL}}": "",
+            "{{WORKBENCH_NLS_REMOTE}}": ""
+        ]
+        for (key, value) in replacements {
+            html = html.replacingOccurrences(of: key, with: value)
+        }
+        return .text(html)
+    }
+
+    private func jsonString(_ object: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: []),
+              let text = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return text
+    }
+}
+
+struct HostError: LocalizedError {
+    let message: String
+    init(_ message: String) { self.message = message }
+    var errorDescription: String? { message }
+}

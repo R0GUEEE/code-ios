@@ -1,0 +1,73 @@
+name: ios
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch workbench + extension store
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund vscode-web@1.91.1
+          mkdir -p Sources/CodeIOS/Resources
+          rm -rf Sources/CodeIOS/Resources/Web Sources/CodeIOS/Resources/Extensions
+          cp -R node_modules/vscode-web/dist Sources/CodeIOS/Resources/Web
+          cp -R extensions Sources/CodeIOS/Resources/Extensions
+          test -f Sources/CodeIOS/Resources/Web/out/vs/code/browser/workbench/workbench.html
+          du -sh Sources/CodeIOS/Resources/*
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project CodeIOS.xcodeproj \
+            -scheme CodeIOS \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP="build/Build/Products/Release-iphoneos/CodeIOS.app"
+          test -d "$APP"
+          rm -rf Payload CodeIOS-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'VS Code'" Payload/CodeIOS.app/Info.plist || true
+          zip -qry CodeIOS-unsigned.ipa Payload
+          ls -lh CodeIOS-unsigned.ipa
+          shasum -a 256 CodeIOS-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CodeIOS-ipa
+          path: CodeIOS-unsigned.ipa
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: build.log
