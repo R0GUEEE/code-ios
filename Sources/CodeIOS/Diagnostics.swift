@@ -1,19 +1,38 @@
 import Foundation
+import Darwin
+
+/// C function pointers cannot capture context, so the handlers must be free functions.
+private func codeIOSUncaughtException(_ exception: NSException) {
+    let text = "CRASH (exception): \(exception.name.rawValue) — \(exception.reason ?? "-")\n"
+        + exception.callStackSymbols.joined(separator: "\n")
+    Diagnostics.append(text)
+
+    let folder = Diagnostics.crashReportsURL
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let file = folder.appendingPathComponent("exception-\(Int(Date().timeIntervalSince1970)).log")
+    try? text.write(to: file, atomically: true, encoding: .utf8)
+}
+
+private func codeIOSFatalSignal(_ signalNumber: Int32) -> Void {
+    // Signal context: no allocation, no locks, only write(2).
+    Diagnostics.appendRaw("CRASH (signal)\n")
+    _exit(128 + signalNumber)
+}
 
 /// Launch breadcrumbs plus a crash recorder.
 ///
-/// The app cannot be debugged on the machine that builds it, so it has to testify
-/// about its own death: every boot step is appended to `Documents/launch.log`, a
-/// marker file is written before the workbench is created and removed once the page
-/// loads, and uncaught exceptions / fatal signals append a final line.
+/// The app cannot be debugged on the machine that builds it, so it has to testify about
+/// its own death: every boot step is appended to `Documents/launch.log`, a marker file is
+/// written before the workbench is created and removed once the page loads, and uncaught
+/// exceptions / fatal signals append a final line.
 ///
 /// Next launch: marker still present ⇒ the previous run died somewhere between the
-/// two breadcrumbs around it, and the UI shows the log instead of a blank screen.
+/// breadcrumbs surrounding it, and the UI shows the log instead of a blank screen.
 enum Diagnostics {
     static let markerName = ".launch-in-progress"
     static let logName = "launch.log"
 
-    private static let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    static let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         ?? URL(fileURLWithPath: NSTemporaryDirectory())
 
     static var logURL: URL { documents.appendingPathComponent(logName) }
@@ -90,34 +109,23 @@ enum Diagnostics {
         guard !installed else { return }
         installed = true
 
-        NSSetUncaughtExceptionHandler { exception in
-            let text = "CRASH (exception): \(exception.name.rawValue) — \(exception.reason ?? "-")\n"
-                + exception.callStackSymbols.joined(separator: "\n")
-            Diagnostics.append(text)
-
-            let report = documents.appendingPathComponent("crashes")
-            try? FileManager.default.createDirectory(at: report, withIntermediateDirectories: true)
-            let file = report.appendingPathComponent("exception-\(Int(Date().timeIntervalSince1970)).log")
-            try? text.write(to: file, atomically: true, encoding: .utf8)
-        }
+        NSSetUncaughtExceptionHandler(codeIOSUncaughtException)
 
         for sig in [SIGABRT, SIGILL, SIGSEGV, SIGFPE, SIGBUS, SIGPIPE, SIGTRAP] {
-            signal(sig) { received in
-                // Signal context: no allocation, no locks — only write(2).
-                Diagnostics.appendRaw("CRASH (signal)\n")
-                _exit(128 + received)
-            }
+            signal(sig, codeIOSFatalSignal)
         }
     }
 
-    /// Small, allocation-free append used from a signal handler.
+    /// Small, allocation-light append used from a signal handler.
     static func appendRaw(_ text: String) {
         guard let data = text.data(using: .utf8) else { return }
         let path = logURL.path
         path.withCString { pointer in
             let fd = open(pointer, O_WRONLY | O_APPEND | O_CREAT, 0o644)
             if fd >= 0 {
-                _ = data.withUnsafeBytes { write(fd, $0.baseAddress, data.count) }
+                _ = data.withUnsafeBytes { buffer in
+                    write(fd, buffer.baseAddress, data.count)
+                }
                 _ = close(fd)
             }
         }
