@@ -9,7 +9,8 @@ import Network
 final class HTTPServer {
     typealias Handler = (HTTPRequest) -> HTTPResponse
 
-    private let handler: Handler
+    /// Set by the owner once the server exists; captured per connection.
+    var handler: Handler?
     private let queue = DispatchQueue(label: "com.codeios.http", qos: .userInitiated, attributes: .concurrent)
     private var listener: NWListener?
     private var connections: [HTTPConnection] = []
@@ -17,40 +18,61 @@ final class HTTPServer {
 
     private(set) var port: UInt16 = 0
 
-    init(handler: @escaping Handler) {
-        self.handler = handler
-    }
-
     func start(preferredPorts: ClosedRange<UInt16> = 41337...41360) throws -> UInt16 {
-        let params = NWParameters.tcp
-        params.allowLocalEndpointReuse = true
-        params.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: .any)
-
         var lastError: Error = NSError(domain: "codeios.http", code: 1,
                                        userInfo: [NSLocalizedDescriptionKey: "no free port"])
 
         for candidate in preferredPorts {
             guard let nwPort = NWEndpoint.Port(rawValue: candidate) else { continue }
-            do {
-                let listener = try NWListener(using: params, on: nwPort)
-                listener.newConnectionHandler = { [weak self] connection in
-                    self?.accept(connection)
-                }
-                listener.stateUpdateHandler = { state in
-                    if case let .failed(error) = state {
-                        NSLog("codeios: listener failed: \(error)")
-                    }
-                }
-                listener.start(queue: queue)
-                self.listener = listener
-                self.port = candidate
-                return candidate
-            } catch {
-                lastError = error
-                continue
+            guard Self.isPortFree(candidate) else { continue }
+            guard let listener = makeListener(port: nwPort) else { continue }
+
+            listener.newConnectionHandler = { [weak self] connection in
+                self?.accept(connection)
             }
+            listener.stateUpdateHandler = { state in
+                if case let .failed(error) = state {
+                    NSLog("codeios: listener failed: \(error)")
+                }
+            }
+            listener.start(queue: queue)
+            self.listener = listener
+            self.port = candidate
+            return candidate
         }
         throw lastError
+    }
+
+    /// Bind to loopback only. The server hands out the whole workspace, so it must
+    /// never be reachable from the LAN.
+    private func makeListener(port: NWEndpoint.Port) -> NWListener? {
+        let params = NWParameters.tcp
+        params.allowLocalEndpointReuse = true
+        params.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host("127.0.0.1"), port: port)
+        if let listener = try? NWListener(using: params) {
+            return listener
+        }
+        let fallback = NWParameters.tcp
+        fallback.allowLocalEndpointReuse = true
+        return try? NWListener(using: fallback, on: port)
+    }
+
+    /// Probe with a plain BSD socket first; NWListener reports a busy port
+    /// asynchronously, which would otherwise leave us on a port we cannot serve.
+    private static func isPortFree(_ port: UInt16) -> Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        if fd < 0 { return false }
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                bind(fd, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        return bound == 0
     }
 
     func stop() {
@@ -64,7 +86,7 @@ final class HTTPServer {
     }
 
     private func accept(_ connection: NWConnection) {
-        let handler = self.handler
+        let handler = self.handler ?? { _ in HTTPResponse.text("no handler", status: 500) }
         let wrapper = HTTPConnection(connection: connection, queue: queue, handler: handler) { [weak self] finished in
             self?.forget(finished)
         }
@@ -218,7 +240,7 @@ final class HTTPConnection {
         head += "Content-Type: \(response.contentType)\r\n"
         head += "Content-Length: \(response.body.count)\r\n"
         head += "Connection: close\r\n"
-        head += "Cache-Control: no-store\r\n"
+        head += "Cache-Control: \(response.cacheControl)\r\n"
         for (name, value) in response.extraHeaders {
             head += "\(name): \(value)\r\n"
         }

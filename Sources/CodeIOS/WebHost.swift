@@ -15,25 +15,46 @@ final class WebHost {
     init(workspaceURL: URL) throws {
         self.workspaceURL = workspaceURL
 
-        guard let resources = Bundle.main.resourceURL else {
-            throw HostError("app bundle has no resource directory")
+        guard let web = Self.resourceDirectory(named: "Web") else {
+            throw HostError("workbench assets missing from the bundle (expected \(Self.workbenchPath)); "
+                            + "bundle contains: \(Self.bundleListing())")
         }
-        let web = resources.appendingPathComponent("Web", isDirectory: true)
-        let ext = resources.appendingPathComponent("Extensions", isDirectory: true)
-        guard FileManager.default.fileExists(atPath: web.appendingPathComponent(Self.workbenchPath).path) else {
-            throw HostError("workbench assets missing from the bundle (expected \(Self.workbenchPath))")
-        }
+        let ext = Self.resourceDirectory(named: "Extensions")
+            ?? web.deletingLastPathComponent().appendingPathComponent("Extensions", isDirectory: true)
         self.webRoot = web
         self.extRoot = ext
         self.bridge = FSBridge(root: workspaceURL)
 
-        // A named local for the closure; assigned after construction.
-        var handler: HTTPServer.Handler!
-        self.server = HTTPServer { request in handler(request) }
-        handler = { [weak self] request in
+        let server = HTTPServer()
+        self.server = server
+        server.handler = { [weak self] request in
             guard let self = self else { return .text("host gone", status: 500) }
             return self.route(request)
         }
+    }
+
+    /// A folder reference is copied next to the bundle's other resources, which on a
+    /// non-wrapped app bundle is not always `resourceURL`. Check every layout.
+    private static func resourceDirectory(named name: String) -> URL? {
+        var candidates: [URL] = []
+        if let resources = Bundle.main.resourceURL {
+            candidates.append(resources.appendingPathComponent(name, isDirectory: true))
+        }
+        candidates.append(Bundle.main.bundleURL.appendingPathComponent(name, isDirectory: true))
+        candidates.append(Bundle.main.bundleURL
+            .appendingPathComponent("Resources", isDirectory: true)
+            .appendingPathComponent(name, isDirectory: true))
+        for candidate in candidates {
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    private static func bundleListing() -> String {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: Bundle.main.bundleURL.path)) ?? []
+        return names.sorted().joined(separator: ", ")
     }
 
     func start() throws -> URL {
@@ -98,7 +119,7 @@ final class WebHost {
         guard let data = try? Data(contentsOf: candidate, options: [.mappedIfSafe]) else {
             return .text("not found", status: 404)
         }
-        return .file(data, contentType: MIME.type(forPath: relative))
+        return .asset(data, contentType: MIME.type(forPath: relative))
     }
 
     // MARK: - workbench configuration

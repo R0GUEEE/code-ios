@@ -15,6 +15,9 @@ struct HTTPResponse {
     var extraHeaders: [(String, String)]
     /// HEAD requests keep the headers but drop the payload.
     var omitBody: Bool = false
+    /// Everything is no-store by default: the filesystem API must never be replayed
+    /// from the HTTP cache. Bundled assets opt in to caching explicitly.
+    var cacheControl: String = "no-store"
 
     init(status: Int = 200,
          contentType: String = "application/octet-stream",
@@ -43,6 +46,13 @@ struct HTTPResponse {
 
     static func file(_ data: Data, contentType: String) -> HTTPResponse {
         HTTPResponse(contentType: contentType, body: data)
+    }
+
+    /// Bundled, immutable asset (workbench JS/CSS, extension store).
+    static func asset(_ data: Data, contentType: String) -> HTTPResponse {
+        var response = HTTPResponse(contentType: contentType, body: data)
+        response.cacheControl = "public, max-age=3600"
+        return response
     }
 
     var reason: String {
