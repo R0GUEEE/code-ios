@@ -110,7 +110,10 @@ struct ContentView: View {
                 WorkbenchWebView(url: url, reloadToken: reloadToken, onLoaded: {
                     Diagnostics.markBootCompleted("webview did finish")
                 })
-                .ignoresSafeArea(edges: [.bottom, .horizontal])
+                // .container, not the default .all: the default also ignores the
+                // *keyboard*, which leaves the editor sitting underneath the
+                // software keyboard instead of resizing above it.
+                .ignoresSafeArea(.container, edges: [.bottom, .horizontal])
             } else if let failure = model.failure {
                 DiagnosticsView(text: "\(failure)\n\n\(Diagnostics.log())",
                                 onRetry: { model.restart() },
@@ -230,7 +233,11 @@ struct WorkbenchWebView: UIViewRepresentable {
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
         webView.allowsBackForwardNavigationGestures = false
+        // The frame we are given already excludes the safe area, so the page must
+        // not inset itself again; `.never` keeps CSS pixels == view pixels.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.bounces = false
+        webView.scrollView.keyboardDismissMode = .interactive
 
         context.coordinator.lastToken = reloadToken
         Diagnostics.append("webview: load \(url.absoluteString)")
