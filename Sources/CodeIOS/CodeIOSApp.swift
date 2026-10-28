@@ -11,9 +11,8 @@ struct CodeIOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
                 .statusBarHidden(false)
-                .preferredColorScheme(.dark)
         }
     }
 }
