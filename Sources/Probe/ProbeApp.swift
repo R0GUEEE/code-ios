@@ -28,7 +28,7 @@ struct ProbeView: View {
             ("Version", (bundle.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "-"),
             ("Executable", bundle.infoDictionary?["CFBundleExecutable"] as? String ?? "-"),
             ("Documents", writable),
-            ("Built", "\(__DATE__) \(__TIME__)")
+            ("Launched", ISO8601DateFormatter().string(from: Date()))
         ]
     }()
 
