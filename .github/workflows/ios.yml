@@ -21,11 +21,17 @@ jobs:
           set -euo pipefail
           npm install --no-audit --no-fund vscode-web@1.91.1
           mkdir -p Sources/CodeIOS/Resources
-          rm -rf Sources/CodeIOS/Resources/Web Sources/CodeIOS/Resources/Extensions
-          cp -R node_modules/vscode-web/dist Sources/CodeIOS/Resources/Web
-          cp -R extensions Sources/CodeIOS/Resources/Extensions
-          test -f Sources/CodeIOS/Resources/Web/out/vs/code/browser/workbench/workbench.html
-          du -sh Sources/CodeIOS/Resources/*
+          rm -rf Sources/CodeIOS/Resources/Web Sources/CodeIOS/Resources/Extensions Sources/CodeIOS/Resources/Web.zip pack
+          # Ship one archive instead of ~720 loose files: sideloaders upload files
+          # individually over AFC and a large parallel upload is where installs break.
+          mkdir -p pack
+          cp -R node_modules/vscode-web/dist pack/Web
+          cp -R extensions pack/Extensions
+          test -f pack/Web/out/vs/code/browser/workbench/workbench.html
+          ( cd pack && zip -qry ../Sources/CodeIOS/Resources/Web.zip Web Extensions )
+          rm -rf pack
+          ls -lh Sources/CodeIOS/Resources/Web.zip
+          unzip -l Sources/CodeIOS/Resources/Web.zip | tail -2
 
       - name: Generate Xcode project
         run: |

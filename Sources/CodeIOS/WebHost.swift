@@ -12,17 +12,14 @@ final class WebHost {
 
     static let workbenchPath = "out/vs/code/browser/workbench/workbench.html"
 
-    init(workspaceURL: URL) throws {
+    init(workspaceURL: URL, webRoot: URL, extRoot: URL) throws {
         self.workspaceURL = workspaceURL
-
-        guard let web = Self.resourceDirectory(named: "Web") else {
-            throw HostError("workbench assets missing from the bundle (expected \(Self.workbenchPath)); "
+        guard FileManager.default.fileExists(atPath: webRoot.appendingPathComponent(Self.workbenchPath).path) else {
+            throw HostError("workbench assets missing at \(webRoot.path) (expected \(Self.workbenchPath)); "
                             + "bundle contains: \(Self.bundleListing())")
         }
-        let ext = Self.resourceDirectory(named: "Extensions")
-            ?? web.deletingLastPathComponent().appendingPathComponent("Extensions", isDirectory: true)
-        self.webRoot = web
-        self.extRoot = ext
+        self.webRoot = webRoot
+        self.extRoot = extRoot
         self.bridge = FSBridge(root: workspaceURL)
 
         let server = HTTPServer()

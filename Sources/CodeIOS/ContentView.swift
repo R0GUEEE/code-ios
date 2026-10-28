@@ -25,7 +25,11 @@ final class HostModel: ObservableObject {
             seedSampleIfEmpty(workspace)
             Diagnostics.append("host: workspace ready at \(workspace.path)")
 
-            let host = try WebHost(workspaceURL: workspace)
+            let assets = try AssetInstaller.prepare()
+            Diagnostics.append("host: assets at \(assets.web.path)")
+            let host = try WebHost(workspaceURL: workspace,
+                                   webRoot: assets.web,
+                                   extRoot: assets.extensions)
             Diagnostics.append("host: constructed")
             let base = try host.start()
             Diagnostics.append("host: listening on \(base.absoluteString)")

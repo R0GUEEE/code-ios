@@ -6,6 +6,11 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
 
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: 0.9.19
+
 targets:
   CodeIOS:
     type: application
@@ -18,11 +23,13 @@ targets:
           - "Resources/**"
       - path: Sources/CodeIOS/Resources
         type: folder
+    dependencies:
+      - package: ZIPFoundation
     info:
       path: Support/Info.plist
       properties:
         CFBundleDisplayName: VS Code
-        CFBundleShortVersionString: "0.1.4"
+        CFBundleShortVersionString: "0.1.5"
         CFBundleVersion: "1"
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
@@ -47,7 +54,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codeios.vscode
         SWIFT_VERSION: "5.0"
-        MARKETING_VERSION: "0.1.4"
+        MARKETING_VERSION: "0.1.5"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
