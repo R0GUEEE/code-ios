@@ -74,8 +74,8 @@ struct CodeTextView: UIViewRepresentable {
 
             view.textContainer.widthTracksTextView = parent.wrapLines
             if !parent.wrapLines {
-                view.textContainer.size = CGSize(width: .greatestFiniteMagnitude,
-                                                 height: .greatestFiniteMagnitude)
+                view.textContainer.size = CGSize(width: CGFloat.greatestFiniteMagnitude,
+                                                 height: CGFloat.greatestFiniteMagnitude)
             }
 
             if selection.location <= attributed.length {
