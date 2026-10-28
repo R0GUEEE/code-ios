@@ -247,15 +247,16 @@ final class WebHost {
       padding-bottom: env(safe-area-inset-bottom, 0px);
       font-size: 10px;
     }
-    .monaco-workbench .part.statusbar .statusbar-item.left { max-width: 45vw; }
     @media (max-width: 640px) {
-      /* single-window app: back/forward navigation arrows are dead weight */
+      /* single-window app: navigation history arrows are dead weight */
       .monaco-workbench .part.titlebar .titlebar-left { display: none !important; }
-      .monaco-workbench .part.titlebar .titlebar-center { padding: 0 4px; }
-      .monaco-workbench .part.activitybar .action-item { padding: 2px 6px; }
-      /* touch targets: the file tree rows are 22px by default */
+      .monaco-workbench .titlebar-center .action-item:has(.codicon-arrow-left),
+      .monaco-workbench .titlebar-center .action-item:has(.codicon-arrow-right) { display: none !important; }
+      /* host keyboard layout indicator, meaningless on iOS */
+      #status\\.workbench\\.keyboardLayout { display: none !important; }
+      /* 22px rows are a mouse target, not a finger one */
       .monaco-workbench .monaco-list .monaco-list-row { height: 30px !important; line-height: 30px !important; }
-      .monaco-workbench .tabs-container .tab { font-size: 11px; }
+      .monaco-workbench .part.sidebar .composite.title { height: 32px; }
     }
     </style>
     """

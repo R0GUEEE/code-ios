@@ -178,9 +178,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         cfg["workspaceUri"] = None
         cfg["configurationDefaults"] = {
             "workbench.colorTheme": "Default Dark Modern",
-            "editor.fontSize": 13,
-            "editor.fontFamily": "'Menlo', 'SF Mono', monospace",
+            "workbench.activityBar.location": "top",
+            "workbench.layoutControl.enabled": False,
+            "breadcrumbs.enabled": False,
+            "explorer.compactFolders": False,
+            "workbench.secondarySideBar.defaultVisibility": "hidden",
+            "workbench.editor.tabSizing": "shrink",
             "workbench.startupEditor": "none",
+            "workbench.tips.enabled": False,
+            "workbench.tree.indent": 10,
+            "editor.fontSize": 12,
+            "editor.minimap.enabled": False,
+            "editor.scrollbar.vertical": "hidden",
         }
         exts = list(ARGS.builtin_ext)
         if not exts and os.path.isdir(ARGS.ext):
@@ -210,6 +219,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         }
         for k, v in repl.items():
             html = html.replace(k, v)
+        html = html.replace("width=device-width, initial-scale=1.0",
+                            "width=device-width, initial-scale=1.0, viewport-fit=cover")
+        phone = """<style id="codeios-phone">
+.monaco-workbench .part.statusbar { padding-bottom: env(safe-area-inset-bottom, 0px); font-size: 10px; }
+@media (max-width: 640px) {
+  /* single-window app: navigation history arrows are dead weight */
+  .monaco-workbench .part.titlebar .titlebar-left { display: none !important; }
+  .monaco-workbench .titlebar-center .action-item:has(.codicon-arrow-left),
+  .monaco-workbench .titlebar-center .action-item:has(.codicon-arrow-right) { display: none !important; }
+  /* host keyboard layout, meaningless on iOS */
+  #status\\.workbench\\.keyboardLayout { display: none !important; }
+  /* 22px rows are a mouse target, not a finger one */
+  .monaco-workbench .monaco-list .monaco-list-row { height: 30px !important; line-height: 30px !important; }
+  .monaco-workbench .part.sidebar .composite.title { height: 32px; }
+}
+</style>"""
+        html = html.replace("</head>", phone + "</head>")
         self._send(html.encode(), "text/html; charset=utf-8")
 
     # ---- filesystem bridge ---------------------------------------------
