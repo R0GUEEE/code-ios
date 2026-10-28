@@ -21,15 +21,18 @@ targets:
       - path: Sources/CodeIOS
         excludes:
           - "Resources/**"
-      - path: Sources/CodeIOS/Resources
-        type: folder
+      # A direct file reference lands Web.zip at the bundle root; a folder
+      # reference would create <app>/Resources/, which is not an iOS layout and
+      # gives installers one more thing to mis-handle.
+      - path: Sources/CodeIOS/Resources/Web.zip
+        buildPhase: resources
     dependencies:
       - package: ZIPFoundation
     info:
       path: Support/Info.plist
       properties:
         CFBundleDisplayName: VS Code
-        CFBundleShortVersionString: "0.1.5"
+        CFBundleShortVersionString: "0.1.6"
         CFBundleVersion: "1"
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
@@ -54,7 +57,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codeios.vscode
         SWIFT_VERSION: "5.0"
-        MARKETING_VERSION: "0.1.5"
+        MARKETING_VERSION: "0.1.6"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
