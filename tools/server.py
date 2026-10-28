@@ -150,7 +150,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self.api_fs(norm[len("/_api/fs/"):])
         if norm == "/_api/workspace":
             return self._json({"folder": ARGS.folder or None, "autoOpen": ARGS.auto_open,
-                               "selftest": ARGS.selftest})
+                               "selftest": ARGS.selftest, "compact": True})
         self.path = norm
         return self.serve_static()
 
@@ -226,13 +226,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 @media (max-width: 640px) {
   /* single-window app: navigation history arrows are dead weight */
   .monaco-workbench .part.titlebar .titlebar-left { display: none !important; }
+  /* the settings editor's own navigation pane forces a 500px split view;
+     on a phone the content should have the whole width instead */
+  .monaco-workbench .settings-editor .settings-editor-tree { display: none !important; }
+
   .monaco-workbench .titlebar-center .action-item:has(.codicon-arrow-left),
   .monaco-workbench .titlebar-center .action-item:has(.codicon-arrow-right) { display: none !important; }
   /* host keyboard layout, meaningless on iOS */
   #status\\.workbench\\.keyboardLayout { display: none !important; }
-  /* 22px rows are a mouse target, not a finger one */
-  .monaco-workbench .monaco-list .monaco-list-row { height: 30px !important; line-height: 30px !important; }
-  .monaco-workbench .part.sidebar .composite.title { height: 32px; }
 }
 </style>"""
         html = html.replace("</head>", phone + "</head>")

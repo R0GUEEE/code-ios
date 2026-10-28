@@ -148,15 +148,37 @@ async function _activate(context) {
 	);
 	log({ ev: 'provider-registered', folders: (vscode.workspace.workspaceFolders || []).length });
 
-	// On a phone the explorer column eats half the screen. Collapse it once, on
-	// first launch only, so a user who opens it again is not fought on every boot.
+	// On a phone the explorer column eats half the screen, so:
+	//  - it collapses once on the first launch of a compact device
+	//  - it steps aside when a wide tab (settings, diff, preview) opens, because
+	//    at 45% width those pages clip instead of reflowing
 	try {
 		const info = await (await fetch(ORIGIN + '/_api/workspace')).json();
-		if (info.compact && !context.globalState.get('ios.compactApplied')) {
+		const compact = !!info.compact;
+
+		if (compact && !context.globalState.get('ios.compactApplied')) {
 			await new Promise((resolve) => setTimeout(resolve, 1500));
 			await vscode.commands.executeCommand('workbench.action.closeSidebar');
 			await context.globalState.update('ios.compactApplied', true);
-			log({ ev: 'compact: sidebar collapsed' });
+			log({ ev: 'compact: sidebar collapsed on first run' });
+		}
+
+		if (compact && vscode.window.tabGroups && vscode.window.tabGroups.onDidChangeTabs) {
+			let lastHandled = '';
+			context.subscriptions.push(
+				vscode.window.tabGroups.onDidChangeTabs(async () => {
+					const tabs = vscode.window.tabGroups.all.reduce((all, group) => all.concat(group.tabs), []);
+					const wide = tabs.find((tab) => /settings|keyboard shortcuts|diff/i.test(tab.label || ''));
+					if (!wide || wide.label === lastHandled) {
+						return;
+					}
+					lastHandled = wide.label;
+					try {
+						await vscode.commands.executeCommand('workbench.action.closeSidebar');
+						log({ ev: 'compact: sidebar closed for', tab: wide.label });
+					} catch (e) { /* sidebar already closed */ }
+				})
+			);
 		}
 	} catch (e) {
 		log({ ev: 'compact-failed', err: String(e && e.message || e) });

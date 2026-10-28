@@ -250,6 +250,9 @@ final class WebHost {
     @media (max-width: 640px) {
       /* single-window app: navigation history arrows are dead weight */
       .monaco-workbench .part.titlebar .titlebar-left { display: none !important; }
+      /* the settings editor's own navigation pane forces a 500px split view;
+         on a phone the content should have the whole width instead */
+      .monaco-workbench .settings-editor .settings-editor-tree { display: none !important; }
       .monaco-workbench .titlebar-center .action-item:has(.codicon-arrow-left),
       .monaco-workbench .titlebar-center .action-item:has(.codicon-arrow-right) { display: none !important; }
       /* host keyboard layout indicator, meaningless on iOS */
