@@ -149,6 +149,25 @@ async function _activate(context) {
 	log({ ev: 'provider-registered', folders: (vscode.workspace.workspaceFolders || []).length });
 
 	context.subscriptions.push(
+		vscode.commands.registerCommand('iosfs.reloadWindow', async () => {
+			await vscode.commands.executeCommand('workbench.action.reloadWindow');
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('iosfs.showDiagnostics', async () => {
+			let text = '';
+			try {
+				text = await (await fetch(ORIGIN + '/_api/diagnostics')).text();
+			} catch (e) {
+				text = 'could not read diagnostics: ' + e;
+			}
+			const doc = await vscode.workspace.openTextDocument({ content: text || '(empty)', language: 'log' });
+			await vscode.window.showTextDocument(doc, { preview: true });
+		})
+	);
+
+	context.subscriptions.push(
 		vscode.commands.registerCommand('iosfs.ping', async () => {
 			const res = await fetch(ORIGIN + '/_api/workspace');
 			const j = await res.json();

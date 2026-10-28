@@ -85,6 +85,9 @@ final class WebHost {
             let op = String(path.dropFirst("/_api/fs/".count))
             return bridge.handle(op: op, request: request)
         }
+        if path == "/_api/diagnostics" {
+            return .text(Diagnostics.log())
+        }
         if path == "/product.json" {
             return .json(productConfiguration())
         }

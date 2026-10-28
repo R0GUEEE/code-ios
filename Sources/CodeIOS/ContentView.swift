@@ -86,14 +86,12 @@ final class HostModel: ObservableObject {
 struct ContentView: View {
     @StateObject private var model = HostModel()
     @State private var reloadToken = 0
-    @State private var showMenu = false
     @State private var showDiagnostics = false
     @State private var diagnosticsText = ""
     @State private var bootChecked = false
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.ignoresSafeArea()
 
             if showDiagnostics {
                 DiagnosticsView(text: diagnosticsText,
@@ -126,37 +124,8 @@ struct ContentView: View {
                 .foregroundStyle(.white)
             }
 
-            if model.url != nil && !showDiagnostics {
-                HStack(spacing: 10) {
-                    Spacer()
-                    Button {
-                        reloadToken += 1
-                    } label: {
-                        Image(systemName: "arrow.clockwise").padding(8)
-                    }
-                    Button {
-                        showMenu = true
-                    } label: {
-                        Image(systemName: "ellipsis.circle").padding(8)
-                    }
-                }
-                .padding(.trailing, 6)
-                .padding(.top, 2)
-                .confirmationDialog("Workspace", isPresented: $showMenu, titleVisibility: .visible) {
-                    Button("Copy workspace path") {
-                        UIPasteboard.general.string = model.workspacePath
-                    }
-                    Button("Show diagnostics") {
-                        diagnosticsText = Diagnostics.log()
-                        showDiagnostics = true
-                    }
-                    Button("Restart workbench", role: .destructive) { model.restart() }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text(model.workspacePath)
-                }
-            }
         }
+        .background(Color.black.ignoresSafeArea())
         .task {
             guard !bootChecked else { return }
             bootChecked = true

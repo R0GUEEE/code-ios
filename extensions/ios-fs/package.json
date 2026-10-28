@@ -15,6 +15,16 @@
         "category": "iOS"
       },
       {
+        "command": "iosfs.reloadWindow",
+        "title": "iOS: Reload Workbench",
+        "category": "iOS"
+      },
+      {
+        "command": "iosfs.showDiagnostics",
+        "title": "iOS: Show Launch Log",
+        "category": "iOS"
+      },
+      {
         "command": "iosfs.ping",
         "title": "iOS: Ping Bridge",
         "category": "iOS"
