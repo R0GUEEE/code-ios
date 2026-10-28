@@ -68,7 +68,7 @@ jobs:
           rm -rf ProbePayload Probe-unsigned.ipa
           mkdir -p ProbePayload
           cp -R build/Build/Products/Release-iphoneos/Probe.app ProbePayload/
-          zip -qry Probe-unsigned.ipa ProbePayload
+          zip -qryD Probe-unsigned.ipa ProbePayload
           ls -lh Probe-unsigned.ipa
 
       - name: Package IPA
@@ -80,15 +80,32 @@ jobs:
           mkdir -p Payload
           cp -R "$APP" Payload/
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'VS Code'" Payload/CodeIOS.app/Info.plist || true
-          zip -qry CodeIOS-unsigned.ipa Payload
+          # -D: no directory entries. Some sideloaders compute the bundle root by
+          # assuming every zip entry is a file, and choke on "Payload/" itself.
+          zip -qryD CodeIOS-unsigned.ipa Payload
+          # also ship the bare .app bundle for tools that want it
+          ditto -c -k --keepParent Payload/CodeIOS.app CodeIOS-app.zip
           ls -lh CodeIOS-unsigned.ipa
           shasum -a 256 CodeIOS-unsigned.ipa
+
+      - name: Verify IPA metadata
+        run: |
+          set -euo pipefail
+          unzip -l CodeIOS-unsigned.ipa | grep -q "Payload/CodeIOS.app/Info.plist" \
+            || { echo "Info.plist missing from IPA"; exit 1; }
+          unzip -p CodeIOS-unsigned.ipa Payload/CodeIOS.app/Info.plist > /tmp/ip.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" /tmp/ip.plist \
+            | grep -qx "com.codeios.vscode" || { echo "bundle id wrong"; exit 1; }
+          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" /tmp/ip.plist \
+            | grep -qx "CodeIOS" || { echo "executable wrong"; exit 1; }
+          echo "IPA metadata ok"
 
       - uses: actions/upload-artifact@v4
         with:
           name: CodeIOS-ipa
           path: |
             CodeIOS-unsigned.ipa
+            CodeIOS-app.zip
             Probe-unsigned.ipa
           if-no-files-found: error
 
