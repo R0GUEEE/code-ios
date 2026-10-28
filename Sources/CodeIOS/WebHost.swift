@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// Owns the loopback server, the bundled workbench, the extension store and the
 /// filesystem bridge. One object == one running VS Code instance.
@@ -73,7 +74,8 @@ final class WebHost {
         let path = request.path
 
         if path == "/_api/workspace" {
-            return .json(["folder": bridge.workspacePath, "autoOpen": true, "port": Int(port)])
+            return .json(["folder": bridge.workspacePath, "autoOpen": true, "port": Int(port),
+                          "compact": Self.isCompact])
         }
         if path == "/_api/log" {
             if let text = String(data: request.body, encoding: .utf8) {
@@ -170,13 +172,7 @@ final class WebHost {
             "path": bridge.workspacePath
         ]
         config["workspaceUri"] = NSNull()
-        config["configurationDefaults"] = [
-            "workbench.colorTheme": "Default Dark Modern",
-            "editor.fontSize": 13,
-            "editor.minimap.enabled": false,
-            "workbench.startupEditor": "none",
-            "workbench.tips.enabled": false
-        ]
+        config["configurationDefaults"] = Self.phoneDefaults
         config["additionalBuiltinExtensions"] = [
             [
                 "scheme": "http",
@@ -208,8 +204,61 @@ final class WebHost {
         for (key, value) in replacements {
             html = html.replacingOccurrences(of: key, with: value)
         }
+
+        // The workbench ships a desktop shell. On a phone the navigation arrows,
+        // the layout widget and a breadcrumb row are pure chrome, and the status
+        // bar would sit under the home indicator without viewport-fit=cover.
+        html = html.replacingOccurrences(
+            of: "width=device-width, initial-scale=1.0",
+            with: "width=device-width, initial-scale=1.0, viewport-fit=cover")
+        html = html.replacingOccurrences(of: "</head>", with: Self.phoneStyles + "</head>")
         return .html(html)
     }
+
+    static var isCompact: Bool {
+        UIScreen.main.bounds.width < 500
+    }
+
+    /// Settings that make the desktop workbench behave like a phone editor.
+    static let phoneDefaults: [String: Any] = [
+        "workbench.colorTheme": "Default Dark Modern",
+        // activity bar moves into the title bar: frees a whole column
+        "workbench.activityBar.location": "top",
+        // the layout widget (four icons top-right) is desktop-only chrome
+        "workbench.layoutControl.enabled": false,
+        "breadcrumbs.enabled": false,
+        "explorer.compactFolders": false,
+        "workbench.secondarySideBar.defaultVisibility": "hidden",
+        "workbench.editor.tabSizing": "shrink",
+        "workbench.startupEditor": "none",
+        "workbench.tips.enabled": false,
+        "workbench.tree.indent": 10,
+        "editor.fontSize": 12,
+        "editor.minimap.enabled": false,
+        "editor.lineNumbers": "on",
+        "editor.scrollbar.vertical": "hidden",
+        "editor.overviewRulerBorder": false,
+        "terminal.integrated.fontSize": 11
+    ]
+
+    static let phoneStyles = """
+    <style id="codeios-phone">
+    .monaco-workbench .part.statusbar {
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      font-size: 10px;
+    }
+    .monaco-workbench .part.statusbar .statusbar-item.left { max-width: 45vw; }
+    @media (max-width: 640px) {
+      /* single-window app: back/forward navigation arrows are dead weight */
+      .monaco-workbench .part.titlebar .titlebar-left { display: none !important; }
+      .monaco-workbench .part.titlebar .titlebar-center { padding: 0 4px; }
+      .monaco-workbench .part.activitybar .action-item { padding: 2px 6px; }
+      /* touch targets: the file tree rows are 22px by default */
+      .monaco-workbench .monaco-list .monaco-list-row { height: 30px !important; line-height: 30px !important; }
+      .monaco-workbench .tabs-container .tab { font-size: 11px; }
+    }
+    </style>
+    """
 
     private func jsonString(_ object: Any) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: []),

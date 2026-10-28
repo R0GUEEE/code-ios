@@ -148,6 +148,20 @@ async function _activate(context) {
 	);
 	log({ ev: 'provider-registered', folders: (vscode.workspace.workspaceFolders || []).length });
 
+	// On a phone the explorer column eats half the screen. Collapse it once, on
+	// first launch only, so a user who opens it again is not fought on every boot.
+	try {
+		const info = await (await fetch(ORIGIN + '/_api/workspace')).json();
+		if (info.compact && !context.globalState.get('ios.compactApplied')) {
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+			await vscode.commands.executeCommand('workbench.action.closeSidebar');
+			await context.globalState.update('ios.compactApplied', true);
+			log({ ev: 'compact: sidebar collapsed' });
+		}
+	} catch (e) {
+		log({ ev: 'compact-failed', err: String(e && e.message || e) });
+	}
+
 	context.subscriptions.push(
 		vscode.commands.registerCommand('iosfs.reloadWindow', async () => {
 			await vscode.commands.executeCommand('workbench.action.reloadWindow');
