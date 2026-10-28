@@ -47,6 +47,30 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build 2>&1 | tee build.log
 
+      - name: Build probe (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project CodeIOS.xcodeproj \
+            -scheme Probe \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee probe.log
+
+      - name: Package probe IPA
+        run: |
+          set -euo pipefail
+          rm -rf ProbePayload Probe-unsigned.ipa
+          mkdir -p ProbePayload
+          cp -R build/Build/Products/Release-iphoneos/Probe.app ProbePayload/
+          zip -qry Probe-unsigned.ipa ProbePayload
+          ls -lh Probe-unsigned.ipa
+
       - name: Package IPA
         run: |
           set -euo pipefail
@@ -63,7 +87,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: CodeIOS-ipa
-          path: CodeIOS-unsigned.ipa
+          path: |
+            CodeIOS-unsigned.ipa
+            Probe-unsigned.ipa
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
